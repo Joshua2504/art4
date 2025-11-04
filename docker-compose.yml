@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: ruo-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: ruo
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    image: node:20-alpine
+    container_name: ruo-app
+    working_dir: /app
+    volumes:
+      - .:/app
+      - ./uploads:/app/uploads
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      DB_HOST: mysql
+      DB_USER: root
+      DB_PASSWORD: root
+      DB_NAME: ruo
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      SMTP_HOST: ${SMTP_HOST:-mail.treudler.net}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-posteingang@rechtundordnung.treudler.net}
+      SMTP_PASS: ${SMTP_PASS}
+      MAIL_DOMAIN: rechtundordnung.treudler.net
+      WEGLI_API_KEY: ${WEGLI_API_KEY}
+    command: sh -c "npm install && node server.js"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped

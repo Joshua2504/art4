@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anzeige Details - RechtUndOrdnung</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-primary">
+        <div class="container-fluid">
+            <a href="/dashboard.html" class="navbar-brand">← Zurück</a>
+            <button class="btn btn-outline-light btn-sm" onclick="logout()">Logout</button>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div id="reportDetail"></div>
+    </div>
+
+    <script>
+        const API = 'http://localhost:3000/api';
+        const token = localStorage.getItem('token');
+        const params = new URLSearchParams(window.location.search);
+        const reportId = params.get('id');
+
+        if (!token) window.location.href = '/';
+        if (!reportId) window.location.href = '/dashboard.html';
+
+        function logout() {
+            localStorage.clear();
+            window.location.href = '/';
+        }
+
+        async function loadReport() {
+            try {
+                const res = await fetch(`${API}/reports/${reportId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (!res.ok) {
+                    if (res.status === 401) {
+                        logout();
+                        return;
+                    }
+                    throw new Error('Report nicht gefunden');
+                }
+
+                const data = await res.json();
+                const { report, photos, documents, history } = data;
+
+                document.getElementById('reportDetail').innerHTML = `
+                    <div class="card">
+                        <div class="card-header bg-primary text-white">
+                            <h3>${report.case_number}</h3>
+                            <span class="badge bg-light text-dark">${getStatusText(report.status)}</span>
+                        </div>
+                        <div class="card-body">
+                            <h5>Details</h5>
+                            <p><strong>Verstoß:</strong> ${report.violation_type || 'Nicht angegeben'}</p>
+                            <p><strong>Standort:</strong> ${report.location_address || 'Nicht verfügbar'}</p>
+                            ${report.notes ? `<p><strong>Hinweise:</strong> ${report.notes}</p>` : ''}
+                            <p><strong>Öffentlich:</strong> ${report.is_public ? 'Ja' : 'Nein'}</p>
+                            <p><strong>Erstellt:</strong> ${new Date(report.created_at).toLocaleString('de-DE')}</p>
+                            ${report.submitted_at ? `<p><strong>Versendet:</strong> ${new Date(report.submitted_at).toLocaleString('de-DE')}</p>` : ''}
+
+                            <hr>
+
+                            <h5>Fotos (${photos.length})</h5>
+                            <div class="row">
+                                ${photos.map(photo => `
+                                    <div class="col-md-3 mb-3">
+                                        <img src="/${photo.filepath}" class="img-fluid img-thumbnail" alt="${photo.filename}">
+                                        <small class="text-muted d-block">${photo.filename}</small>
+                                        ${photo.lat && photo.lng ? `<small>📍 ${photo.lat.toFixed(6)}, ${photo.lng.toFixed(6)}</small>` : ''}
+                                    </div>
+                                `).join('')}
+                            </div>
+
+                            ${documents.length > 0 ? `
+                                <hr>
+                                <h5>Dokumente (${documents.length})</h5>
+                                <ul class="list-group">
+                                    ${documents.map(doc => `
+                                        <li class="list-group-item">
+                                            ${doc.filename}
+                                            <span class="badge bg-secondary">${doc.file_type}</span>
+                                            <small class="text-muted">${doc.uploaded_by_user ? 'Von Ihnen' : 'Von Behörde'}</small>
+                                        </li>
+                                    `).join('')}
+                                </ul>
+                            ` : ''}
+
+                            ${history.length > 0 ? `
+                                <hr>
+                                <h5>Status-Verlauf</h5>
+                                <ul class="list-group">
+                                    ${history.map(h => `
+                                        <li class="list-group-item">
+                                            <strong>${getStatusText(h.new_status)}</strong>
+                                            ${h.old_status ? ` (von ${getStatusText(h.old_status)})` : ''}
+                                            <br>
+                                            <small class="text-muted">${new Date(h.created_at).toLocaleString('de-DE')}</small>
+                                            ${h.notes ? `<br><small>${h.notes}</small>` : ''}
+                                        </li>
+                                    `).join('')}
+                                </ul>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            } catch (error) {
+                alert('Fehler beim Laden: ' + error.message);
+                window.location.href = '/dashboard.html';
+            }
+        }
+
+        function getStatusText(status) {
+            const texts = {
+                'draft': 'Entwurf',
+                'submitted': 'Versendet',
+                'in_progress': 'In Bearbeitung',
+                'completed': 'Abgeschlossen',
+                'rejected': 'Abgelehnt'
+            };
+            return texts[status] || status;
+        }
+
+        loadReport();
+    </script>
+</body>
+</html>

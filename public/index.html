@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RechtUndOrdnung - DSGVO Surveillance Reports</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <h1 class="text-center mb-4">RechtUndOrdnung</h1>
+                <p class="text-center text-muted">Platform zum Melden rechtswidriger Videoüberwachung</p>
+
+                <!-- Login Form -->
+                <div id="loginForm">
+                    <h3>Login</h3>
+                    <div id="loginError" class="alert alert-danger d-none"></div>
+                    <div class="mb-3">
+                        <input type="email" id="loginEmail" class="form-control" placeholder="E-Mail" required>
+                    </div>
+                    <div class="mb-3">
+                        <input type="password" id="loginPassword" class="form-control" placeholder="Passwort" required>
+                    </div>
+                    <button onclick="login()" class="btn btn-primary w-100 mb-2">Login</button>
+                    <button onclick="showRegister()" class="btn btn-link w-100">Noch kein Konto? Registrieren</button>
+                </div>
+
+                <!-- Register Form -->
+                <div id="registerForm" class="d-none">
+                    <h3>Registrieren</h3>
+                    <div id="registerError" class="alert alert-danger d-none"></div>
+                    <div class="mb-3">
+                        <input type="text" id="registerName" class="form-control" placeholder="Name (optional)">
+                    </div>
+                    <div class="mb-3">
+                        <input type="email" id="registerEmail" class="form-control" placeholder="E-Mail" required>
+                    </div>
+                    <div class="mb-3">
+                        <input type="password" id="registerPassword" class="form-control" placeholder="Passwort (min. 8 Zeichen)" required>
+                    </div>
+                    <button onclick="register()" class="btn btn-success w-100 mb-2">Registrieren</button>
+                    <button onclick="showLogin()" class="btn btn-link w-100">Zurück zum Login</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = 'http://localhost:3000/api';
+
+        // Check if already logged in
+        if (localStorage.getItem('token')) {
+            window.location.href = '/dashboard.html';
+        }
+
+        function showRegister() {
+            document.getElementById('loginForm').classList.add('d-none');
+            document.getElementById('registerForm').classList.remove('d-none');
+        }
+
+        function showLogin() {
+            document.getElementById('loginForm').classList.remove('d-none');
+            document.getElementById('registerForm').classList.add('d-none');
+        }
+
+        async function login() {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+
+            try {
+                const res = await fetch(`${API}/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    localStorage.setItem('token', data.token);
+                    localStorage.setItem('user', JSON.stringify(data.user));
+                    window.location.href = '/dashboard.html';
+                } else {
+                    document.getElementById('loginError').textContent = data.error || 'Login fehlgeschlagen';
+                    document.getElementById('loginError').classList.remove('d-none');
+                }
+            } catch (error) {
+                alert('Fehler beim Login: ' + error.message);
+            }
+        }
+
+        async function register() {
+            const name = document.getElementById('registerName').value;
+            const email = document.getElementById('registerEmail').value;
+            const password = document.getElementById('registerPassword').value;
+
+            if (password.length < 8) {
+                document.getElementById('registerError').textContent = 'Passwort muss mindestens 8 Zeichen haben';
+                document.getElementById('registerError').classList.remove('d-none');
+                return;
+            }
+
+            try {
+                const res = await fetch(`${API}/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password, name })
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    localStorage.setItem('token', data.token);
+                    localStorage.setItem('user', JSON.stringify(data.user));
+                    window.location.href = '/dashboard.html';
+                } else {
+                    document.getElementById('registerError').textContent = data.error || 'Registrierung fehlgeschlagen';
+                    document.getElementById('registerError').classList.remove('d-none');
+                }
+            } catch (error) {
+                alert('Fehler bei der Registrierung: ' + error.message);
+            }
+        }
+
+        // Enter key support
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('loginPassword').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') login();
+            });
+            document.getElementById('registerPassword').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') register();
+            });
+        });
+    </script>
+</body>
+</html>
