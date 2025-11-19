@@ -106,7 +106,8 @@
                                         <small class="text-muted">Erstellt: ${new Date(report.created_at).toLocaleDateString('de-DE')}</small>
                                     </div>
                                     <div class="d-flex gap-2">
-                                        <a href="/detail.html?id=${report.id}" class="btn btn-sm btn-outline-primary">Bearbeiten</a>
+                                        <a href="/create.html?draft=${report.id}" class="btn btn-sm btn-outline-primary">✏️ Bearbeiten</a>
+                                        <a href="/detail.html?id=${report.id}" class="btn btn-sm btn-outline-secondary">👁️ Ansehen</a>
                                         <button onclick="deleteDraft(${report.id}, '${report.case_number}')" class="btn btn-sm btn-outline-danger">
                                             🗑️ Löschen
                                         </button>

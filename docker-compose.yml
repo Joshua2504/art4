@@ -40,6 +40,9 @@ services:
       SMTP_PASS: ${SMTP_PASS}
       MAIL_DOMAIN: rechtundordnung.treudler.net
       WEGLI_API_KEY: ${WEGLI_API_KEY}
+      MASTER_EMAIL: ${MASTER_EMAIL:-joshua@treudler.net}
+      MASTER_PASSWORD: ${MASTER_PASSWORD:-password}
+      MASTER_NAME: ${MASTER_NAME:-Joshua Treudler}
     command: sh -c "npm install && node server.js"
     depends_on:
       mysql:

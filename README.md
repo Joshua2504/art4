@@ -46,10 +46,16 @@ cp .env.example .env
 Dann `.env` bearbeiten und SMTP/IMAP Zugangsdaten eintragen:
 
 ```env
+# SMTP Configuration
 SMTP_HOST=mail.treudler.net
 SMTP_PORT=587
 SMTP_USER=posteingang@rechtundordnung.treudler.net
 SMTP_PASS=your_password
+
+# Master Account (optional - wird beim ersten Start angelegt)
+MASTER_EMAIL=joshua@treudler.net
+MASTER_PASSWORD=password
+MASTER_NAME=Joshua Treudler
 ```
 
 ### 2. Mit Docker Compose starten
@@ -73,8 +79,15 @@ http://localhost:3000
 
 ## 📝 Verwendung
 
-### 1. **Registrieren**
-- Öffne `http://localhost:3000`
+### 1. **Login mit Master Account**
+- Beim ersten Start wird automatisch ein Master-Account angelegt:
+  - **E-Mail:** `joshua@treudler.net`
+  - **Passwort:** `password`
+  - **Name:** Joshua Treudler
+- Die Zugangsdaten können über Umgebungsvariablen angepasst werden (siehe `.env`)
+- Öffne `http://localhost:3000` und melde dich an
+
+Alternativ kannst du dich auch registrieren:
 - Klicke auf "Registrieren"
 - Gib E-Mail und Passwort ein
 

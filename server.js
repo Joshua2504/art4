@@ -36,7 +36,12 @@ const CONFIG = {
     }
   },
   mailDomain: process.env.MAIL_DOMAIN || 'rechtundordnung.treudler.net',
-  wegliApiKey: process.env.WEGLI_API_KEY
+  wegliApiKey: process.env.WEGLI_API_KEY,
+  masterAccount: {
+    email: process.env.MASTER_EMAIL || 'joshua@treudler.net',
+    password: process.env.MASTER_PASSWORD || 'password',
+    name: process.env.MASTER_NAME || 'Joshua Treudler'
+  }
 };
 
 let db;
@@ -52,9 +57,40 @@ async function connectDB() {
   try {
     db = await mysql.createPool(CONFIG.db);
     console.log('✅ MySQL connected');
+
+    // Create master account if it doesn't exist
+    await createMasterAccount();
   } catch (error) {
     console.error('❌ MySQL connection failed:', error.message);
     process.exit(1);
+  }
+}
+
+async function createMasterAccount() {
+  try {
+    const { email, password, name } = CONFIG.masterAccount;
+
+    // Check if master account already exists
+    const [users] = await db.execute(
+      'SELECT id FROM users WHERE email = ?',
+      [email]
+    );
+
+    if (users.length > 0) {
+      console.log(`ℹ️  Master account already exists: ${email}`);
+      return;
+    }
+
+    // Create master account
+    const passwordHash = await bcrypt.hash(password, 10);
+    await db.execute(
+      'INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?)',
+      [email, passwordHash, name]
+    );
+
+    console.log(`✅ Master account created: ${email}`);
+  } catch (error) {
+    console.error('⚠️  Failed to create master account:', error.message);
   }
 }
 
@@ -379,6 +415,42 @@ app.put('/api/reports/:id', authMiddleware, async (req, res) => {
   }
 });
 
+app.put('/api/reports/:id/location', authMiddleware, async (req, res) => {
+  try {
+    const { lat, lng, address, zip } = req.body;
+
+    // Verify ownership
+    const [reports] = await db.execute(
+      'SELECT * FROM reports WHERE id = ? AND user_id = ?',
+      [req.params.id, req.user.id]
+    );
+
+    if (!reports[0]) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    // Get district from weg.li if we have a zip
+    let districtId = null;
+    if (zip) {
+      const district = await getDistrictByZip(zip);
+      if (district) {
+        districtId = district.id;
+        console.log(`✅ District updated: ${district.name} → ${district.email}`);
+      }
+    }
+
+    await db.execute(
+      'UPDATE reports SET location_lat = ?, location_lng = ?, location_address = ?, location_zip = ?, district_id = ? WHERE id = ?',
+      [lat, lng, address || null, zip || null, districtId, req.params.id]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Update location error:', error);
+    res.status(500).json({ error: 'Failed to update location' });
+  }
+});
+
 app.delete('/api/reports/:id', authMiddleware, async (req, res) => {
   try {
     // Get report details
@@ -482,6 +554,16 @@ app.post('/api/photos', authMiddleware, upload.single('photo'), async (req, res)
       [reportId, file.originalname, newPath, file.mimetype, mediaType, file.size, lat, lng, takenAt]
     );
 
+    // Prepare response data
+    const responseData = {
+      success: true,
+      photo: {
+        lat,
+        lng,
+        mediaType
+      }
+    };
+
     // Update report location if this is first photo with GPS
     if (lat && lng && !report.location_lat) {
       // Geocode
@@ -502,6 +584,14 @@ app.post('/api/photos', authMiddleware, upload.single('photo'), async (req, res)
         [lat, lng, location?.address || null, location?.zip || null, districtId, reportId]
       );
 
+      // Add location to response
+      responseData.location = {
+        address: location?.address || null,
+        zip: location?.zip || null,
+        lat,
+        lng
+      };
+
       // 🚨 PROXIMITY CHECK (50m)
       const [nearby] = await db.execute(
         `SELECT id, case_number, status,
@@ -519,22 +609,29 @@ app.post('/api/photos', authMiddleware, upload.single('photo'), async (req, res)
       );
 
       if (nearby.length > 0) {
-        return res.json({
-          success: true,
-          proximityWarning: {
-            found: true,
-            count: nearby.length,
-            reports: nearby.map(r => ({
-              caseNumber: r.case_number,
-              distance: Math.round(r.distance),
-              status: r.status
-            }))
-          }
-        });
+        responseData.proximityWarning = {
+          found: true,
+          count: nearby.length,
+          reports: nearby.map(r => ({
+            caseNumber: r.case_number,
+            distance: Math.round(r.distance),
+            status: r.status
+          }))
+        };
       }
+    } else if (lat && lng) {
+      // Photo has GPS but report already has location
+      // Geocode this photo's location
+      const location = await geocodeLocation(lat, lng);
+      responseData.location = {
+        address: location?.address || null,
+        zip: location?.zip || null,
+        lat,
+        lng
+      };
     }
 
-    res.json({ success: true });
+    res.json(responseData);
   } catch (error) {
     console.error('Photo upload error:', error);
     if (req.file) {

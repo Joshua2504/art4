@@ -85,6 +85,39 @@
             line-height: 1;
             cursor: pointer;
             padding: 0;
+            z-index: 2;
+        }
+        .photo-preview-item img, .photo-preview-item video {
+            cursor: pointer;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 9999;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.9);
+        }
+        .modal-content {
+            margin: auto;
+            display: block;
+            max-width: 90%;
+            max-height: 90%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .modal-close {
+            position: absolute;
+            top: 15px;
+            right: 35px;
+            color: #f1f1f1;
+            font-size: 40px;
+            font-weight: bold;
+            cursor: pointer;
         }
         .fixed-submit-bar {
             position: fixed;
@@ -99,6 +132,14 @@
         .btn-lg-mobile {
             padding: 12px 24px;
             font-size: 1.1rem;
+        }
+        @media (max-width: 576px) {
+            .fixed-submit-bar .d-flex {
+                flex-direction: column;
+            }
+            .fixed-submit-bar .btn {
+                width: 100% !important;
+            }
         }
         .upload-area {
             border: 2px dashed #dee2e6;
@@ -168,6 +209,22 @@
             </div>
         </div>
 
+        <!-- Location Display -->
+        <div id="locationCard" class="alert alert-success d-none">
+            <strong>📍 Standort:</strong> <span id="currentLocation"></span>
+        </div>
+
+        <!-- Location Selector (shown when multiple photos with GPS) -->
+        <div class="card d-none" id="locationSelector">
+            <div class="card-header">📍 Standort auswählen</div>
+            <div class="card-body">
+                <p class="mb-2">Sie haben mehrere Fotos mit GPS-Daten hochgeladen. Wählen Sie den Standort aus:</p>
+                <select id="locationSelect" class="form-select" onchange="selectLocation()">
+                    <option value="">-- Standort wählen --</option>
+                </select>
+            </div>
+        </div>
+
         <!-- Section 2: Details -->
         <div class="card" id="detailsSection">
             <div class="card-header">2. Details angeben</div>
@@ -202,10 +259,22 @@
     <!-- Fixed Submit Button -->
     <div class="fixed-submit-bar">
         <div class="container">
-            <button onclick="submitReport()" class="btn btn-success w-100 btn-lg-mobile" id="submitBtn" disabled>
-                <span id="submitBtnText">Anzeige absenden</span>
-            </button>
+            <div class="d-flex gap-2">
+                <button onclick="saveDraft()" class="btn btn-outline-secondary btn-lg-mobile flex-shrink-0" id="saveDraftBtn">
+                    💾 Entwurf speichern
+                </button>
+                <button onclick="submitReport()" class="btn btn-success w-100 btn-lg-mobile" id="submitBtn" disabled>
+                    <span id="submitBtnText">📤 Anzeige absenden</span>
+                </button>
+            </div>
         </div>
+    </div>
+
+    <!-- Image Enlargement Modal -->
+    <div id="imageModal" class="modal" onclick="closeModal()">
+        <span class="modal-close" onclick="closeModal()">&times;</span>
+        <img class="modal-content" id="modalImage">
+        <video class="modal-content" id="modalVideo" controls style="display:none;"></video>
     </div>
 
     <script>
@@ -214,27 +283,78 @@
         let reportId = null;
         let selectedFiles = [];
         let uploadedPhotosCount = 0;
+        let photoLocations = []; // Store all photo locations with GPS
 
         if (!token) window.location.href = '/';
 
-        // Auto-create report on page load
+        // Check if we're editing a draft
+        const urlParams = new URLSearchParams(window.location.search);
+        const draftId = urlParams.get('draft');
+
+        // Auto-create report or load existing draft
         (async function() {
             try {
-                const res = await fetch(`${API}/reports`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
+                if (draftId) {
+                    // Load existing draft
+                    const res = await fetch(`${API}/reports/${draftId}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    const data = await res.json();
+
+                    if (res.ok) {
+                        const { report, photos } = data;
+
+                        // Check if it's a draft
+                        if (report.status !== 'draft') {
+                            alert('Dieser Bericht kann nicht mehr bearbeitet werden.');
+                            window.location.href = '/dashboard.html';
+                            return;
+                        }
+
+                        reportId = report.id;
+                        document.getElementById('caseNumber').textContent = report.case_number;
+                        document.getElementById('caseNumberCard').classList.remove('d-none');
+
+                        // Load existing data
+                        if (report.violation_type) {
+                            document.getElementById('violationType').value = report.violation_type;
+                        }
+                        if (report.notes) {
+                            document.getElementById('notes').value = report.notes;
+                        }
+                        document.getElementById('isPublic').checked = report.is_public !== false;
+                        document.getElementById('hideUsername').checked = report.hide_username !== false;
+
+                        // Set uploaded photos count
+                        uploadedPhotosCount = photos.length;
+
+                        // Update progress
+                        updateProgress();
+
+                        // Change title
+                        document.querySelector('h2').textContent = 'Entwurf bearbeiten';
+                    } else {
+                        alert('Fehler beim Laden des Entwurfs: ' + data.error);
+                        window.location.href = '/dashboard.html';
                     }
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    reportId = data.id;
-                    document.getElementById('caseNumber').textContent = data.caseNumber;
-                    document.getElementById('caseNumberCard').classList.remove('d-none');
                 } else {
-                    alert('Fehler beim Erstellen des Berichts: ' + data.error);
-                    window.location.href = '/dashboard.html';
+                    // Create new report
+                    const res = await fetch(`${API}/reports`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                        reportId = data.id;
+                        document.getElementById('caseNumber').textContent = data.caseNumber;
+                        document.getElementById('caseNumberCard').classList.remove('d-none');
+                    } else {
+                        alert('Fehler beim Erstellen des Berichts: ' + data.error);
+                        window.location.href = '/dashboard.html';
+                    }
                 }
             } catch (error) {
                 alert('Fehler: ' + error.message);
@@ -281,14 +401,39 @@
                 return `
                     <div class="photo-preview-item">
                         ${isVideo ?
-                            `<video src="${previewUrl}" style="width:100%;height:100%;object-fit:cover;"></video>
-                             <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:2rem;">▶️</div>` :
-                            `<img src="${previewUrl}" alt="${file.name}">`
+                            `<video src="${previewUrl}" style="width:100%;height:100%;object-fit:cover;" onclick="enlargeMedia(this, true)"></video>
+                             <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:2rem;pointer-events:none;">▶️</div>` :
+                            `<img src="${previewUrl}" alt="${file.name}" onclick="enlargeMedia(this, false)">`
                         }
-                        <button class="remove-btn" onclick="removePhoto(${index})">×</button>
+                        <button class="remove-btn" onclick="event.stopPropagation(); removePhoto(${index})">×</button>
                     </div>
                 `;
             }).join('');
+        }
+
+        function enlargeMedia(element, isVideo) {
+            const modal = document.getElementById('imageModal');
+            const modalImg = document.getElementById('modalImage');
+            const modalVideo = document.getElementById('modalVideo');
+
+            if (isVideo) {
+                modalImg.style.display = 'none';
+                modalVideo.style.display = 'block';
+                modalVideo.src = element.src;
+            } else {
+                modalVideo.style.display = 'none';
+                modalImg.style.display = 'block';
+                modalImg.src = element.src;
+            }
+            modal.style.display = 'block';
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('imageModal');
+            const modalVideo = document.getElementById('modalVideo');
+            modal.style.display = 'none';
+            modalVideo.pause();
+            modalVideo.src = '';
         }
 
         function removePhoto(index) {
@@ -317,6 +462,23 @@
                     if (res.ok) {
                         uploadedPhotosCount++;
 
+                        // Handle location data
+                        if (data.location) {
+                            photoLocations.push({
+                                address: data.location.address,
+                                zip: data.location.zip,
+                                lat: data.location.lat,
+                                lng: data.location.lng,
+                                fileName: file.name
+                            });
+
+                            // Update location display
+                            updateLocationDisplay();
+                        } else if (data.photo && data.photo.lat && data.photo.lng) {
+                            // Photo has GPS but location not geocoded yet
+                            status.innerHTML += `<p class="text-info mb-0">📍 GPS: ${data.photo.lat.toFixed(6)}, ${data.photo.lng.toFixed(6)}</p>`;
+                        }
+
                         // Check proximity warning
                         if (data.proximityWarning && data.proximityWarning.found) {
                             const warning = document.getElementById('proximityWarning');
@@ -341,6 +503,74 @@
 
             status.innerHTML = `<p class="text-success mb-0">✅ ${uploadedPhotosCount} Foto(s) erfolgreich hochgeladen</p>`;
             updateProgress();
+        }
+
+        function updateLocationDisplay() {
+            if (photoLocations.length === 0) return;
+
+            const locationCard = document.getElementById('locationCard');
+            const locationText = document.getElementById('currentLocation');
+
+            if (photoLocations.length === 1) {
+                // Single location - just display it
+                const loc = photoLocations[0];
+                locationText.textContent = loc.address || `${loc.lat.toFixed(6)}, ${loc.lng.toFixed(6)}`;
+                locationCard.classList.remove('d-none');
+            } else {
+                // Multiple locations - show selector
+                const selector = document.getElementById('locationSelector');
+                const select = document.getElementById('locationSelect');
+
+                // Populate dropdown
+                select.innerHTML = '<option value="">-- Standort wählen --</option>' +
+                    photoLocations.map((loc, index) => `
+                        <option value="${index}">
+                            ${loc.address || `${loc.lat.toFixed(6)}, ${loc.lng.toFixed(6)}`} (${loc.fileName})
+                        </option>
+                    `).join('');
+
+                selector.classList.remove('d-none');
+
+                // Auto-select first if nothing selected
+                if (!select.value && photoLocations.length > 0) {
+                    select.value = "0";
+                    selectLocation();
+                }
+            }
+        }
+
+        async function selectLocation() {
+            const select = document.getElementById('locationSelect');
+            const selectedIndex = select.value;
+
+            if (selectedIndex === '') return;
+
+            const loc = photoLocations[selectedIndex];
+
+            // Update the report location
+            try {
+                await fetch(`${API}/reports/${reportId}/location`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        lat: loc.lat,
+                        lng: loc.lng,
+                        address: loc.address,
+                        zip: loc.zip
+                    })
+                });
+
+                // Update display
+                const locationCard = document.getElementById('locationCard');
+                const locationText = document.getElementById('currentLocation');
+                locationText.textContent = loc.address || `${loc.lat.toFixed(6)}, ${loc.lng.toFixed(6)}`;
+                locationCard.classList.remove('d-none');
+            } catch (error) {
+                console.error('Error updating location:', error);
+            }
         }
 
         // Drag and drop support
@@ -374,6 +604,40 @@
 
         // Watch for violation type changes
         document.getElementById('violationType').addEventListener('change', updateProgress);
+
+        async function saveDraft() {
+            const violationType = document.getElementById('violationType').value;
+            const notes = document.getElementById('notes').value;
+            const isPublic = document.getElementById('isPublic').checked;
+            const hideUsername = document.getElementById('hideUsername').checked;
+
+            const saveDraftBtn = document.getElementById('saveDraftBtn');
+            const originalText = saveDraftBtn.innerHTML;
+            saveDraftBtn.disabled = true;
+            saveDraftBtn.innerHTML = '💾 Speichert...';
+
+            try {
+                // Update report
+                await fetch(`${API}/reports/${reportId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ violationType, notes, isPublic, hideUsername })
+                });
+
+                saveDraftBtn.innerHTML = '✅ Gespeichert!';
+                setTimeout(() => {
+                    saveDraftBtn.innerHTML = originalText;
+                    saveDraftBtn.disabled = false;
+                }, 2000);
+            } catch (error) {
+                alert('Fehler beim Speichern: ' + error.message);
+                saveDraftBtn.innerHTML = originalText;
+                saveDraftBtn.disabled = false;
+            }
+        }
 
         async function submitReport() {
             const violationType = document.getElementById('violationType').value;
