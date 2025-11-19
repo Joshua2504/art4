@@ -75,7 +75,7 @@
                                     <div class="col-md-3 mb-3">
                                         <img src="/${photo.filepath}" class="img-fluid img-thumbnail" alt="${photo.filename}">
                                         <small class="text-muted d-block">${photo.filename}</small>
-                                        ${photo.lat && photo.lng ? `<small>📍 ${photo.lat.toFixed(6)}, ${photo.lng.toFixed(6)}</small>` : ''}
+                                        ${photo.lat && photo.lng ? `<small>📍 ${parseFloat(photo.lat).toFixed(6)}, ${parseFloat(photo.lng).toFixed(6)}</small>` : ''}
                                     </div>
                                 `).join('')}
                             </div>
