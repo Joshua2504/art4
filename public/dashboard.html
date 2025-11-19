@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - RechtUndOrdnung</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        @media (max-width: 768px) {
+            .d-flex.gap-2 {
+                flex-direction: column;
+                gap: 0.5rem !important;
+            }
+            .d-flex.gap-2 .btn {
+                width: 100%;
+            }
+        }
+    </style>
 </head>
 <body>
     <nav class="navbar navbar-dark bg-primary">
@@ -24,7 +35,17 @@
             <a href="/create.html" class="btn btn-primary">+ Neue Anzeige</a>
         </div>
 
-        <div id="reportsList"></div>
+        <!-- Drafts Section -->
+        <div id="draftsSection" class="mb-4" style="display: none;">
+            <h4 class="text-muted mb-3">📝 Entwürfe</h4>
+            <div id="draftsList"></div>
+        </div>
+
+        <!-- Submitted Reports Section -->
+        <div id="submittedSection">
+            <h4 class="text-muted mb-3">📤 Versendete Anzeigen</h4>
+            <div id="reportsList"></div>
+        </div>
     </div>
 
     <script>
@@ -59,18 +80,63 @@
                     throw new Error(data.error);
                 }
 
-                const container = document.getElementById('reportsList');
+                // Separate drafts from submitted reports
+                const drafts = data.reports.filter(r => r.status === 'draft');
+                const submitted = data.reports.filter(r => r.status !== 'draft');
 
-                if (data.reports.length === 0) {
-                    container.innerHTML = '<p class="text-muted">Noch keine Anzeigen erstellt.</p>';
+                // Display drafts
+                const draftsContainer = document.getElementById('draftsList');
+                const draftsSection = document.getElementById('draftsSection');
+
+                if (drafts.length > 0) {
+                    draftsSection.style.display = 'block';
+                    draftsContainer.innerHTML = drafts.map(report => `
+                        <div class="card mb-3 border-warning">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div class="flex-grow-1">
+                                        <h5 class="card-title">${report.case_number}</h5>
+                                        <p class="card-text text-muted mb-2">
+                                            <span class="badge bg-secondary">${getStatusText(report.status)}</span>
+                                            ${report.photo_count} Foto(s)
+                                        </p>
+                                        <p class="card-text">
+                                            ${report.location_address || 'Kein Standort'}
+                                        </p>
+                                        <small class="text-muted">Erstellt: ${new Date(report.created_at).toLocaleDateString('de-DE')}</small>
+                                    </div>
+                                    <div class="d-flex gap-2">
+                                        <a href="/detail.html?id=${report.id}" class="btn btn-sm btn-outline-primary">Bearbeiten</a>
+                                        <button onclick="deleteDraft(${report.id}, '${report.case_number}')" class="btn btn-sm btn-outline-danger">
+                                            🗑️ Löschen
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    draftsSection.style.display = 'none';
+                }
+
+                // Display submitted reports
+                const submittedContainer = document.getElementById('reportsList');
+
+                if (submitted.length === 0 && drafts.length === 0) {
+                    submittedContainer.innerHTML = '<p class="text-muted">Noch keine Anzeigen erstellt.</p>';
                     return;
                 }
 
-                container.innerHTML = data.reports.map(report => `
+                if (submitted.length === 0) {
+                    submittedContainer.innerHTML = '<p class="text-muted">Noch keine Anzeigen versendet.</p>';
+                    return;
+                }
+
+                submittedContainer.innerHTML = submitted.map(report => `
                     <div class="card mb-3">
                         <div class="card-body">
                             <div class="d-flex justify-content-between align-items-start">
-                                <div>
+                                <div class="flex-grow-1">
                                     <h5 class="card-title">${report.case_number}</h5>
                                     <p class="card-text text-muted mb-2">
                                         <span class="badge bg-${getStatusColor(report.status)}">${getStatusText(report.status)}</span>
@@ -79,7 +145,10 @@
                                     <p class="card-text">
                                         ${report.location_address || 'Kein Standort'}
                                     </p>
-                                    <small class="text-muted">Erstellt: ${new Date(report.created_at).toLocaleDateString('de-DE')}</small>
+                                    <small class="text-muted">
+                                        Erstellt: ${new Date(report.created_at).toLocaleDateString('de-DE')}
+                                        ${report.submitted_at ? ` • Versendet: ${new Date(report.submitted_at).toLocaleDateString('de-DE')}` : ''}
+                                    </small>
                                 </div>
                                 <div>
                                     <a href="/detail.html?id=${report.id}" class="btn btn-sm btn-outline-primary">Details</a>
@@ -90,6 +159,30 @@
                 `).join('');
             } catch (error) {
                 alert('Fehler beim Laden der Anzeigen: ' + error.message);
+            }
+        }
+
+        async function deleteDraft(reportId, caseNumber) {
+            if (!confirm(`Möchten Sie den Entwurf "${caseNumber}" wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`)) {
+                return;
+            }
+
+            try {
+                const res = await fetch(`${API}/reports/${reportId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    // Reload reports list
+                    loadReports();
+                } else {
+                    alert('Fehler beim Löschen: ' + data.error);
+                }
+            } catch (error) {
+                alert('Fehler beim Löschen: ' + error.message);
             }
         }
 

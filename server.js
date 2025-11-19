@@ -355,7 +355,7 @@ app.get('/api/reports/:id', authMiddleware, async (req, res) => {
 
 app.put('/api/reports/:id', authMiddleware, async (req, res) => {
   try {
-    const { violationType, notes, isPublic } = req.body;
+    const { violationType, notes, isPublic, hideUsername } = req.body;
 
     // Verify ownership
     const [reports] = await db.execute(
@@ -368,8 +368,8 @@ app.put('/api/reports/:id', authMiddleware, async (req, res) => {
     }
 
     await db.execute(
-      'UPDATE reports SET violation_type = ?, notes = ?, is_public = ? WHERE id = ?',
-      [violationType || null, notes || null, isPublic || false, req.params.id]
+      'UPDATE reports SET violation_type = ?, notes = ?, is_public = ?, hide_username = ? WHERE id = ?',
+      [violationType || null, notes || null, isPublic !== undefined ? isPublic : true, hideUsername || false, req.params.id]
     );
 
     res.json({ success: true });
@@ -381,13 +381,46 @@ app.put('/api/reports/:id', authMiddleware, async (req, res) => {
 
 app.delete('/api/reports/:id', authMiddleware, async (req, res) => {
   try {
-    const [result] = await db.execute(
-      'DELETE FROM reports WHERE id = ? AND user_id = ? AND status = "draft"',
+    // Get report details
+    const [reports] = await db.execute(
+      'SELECT * FROM reports WHERE id = ? AND user_id = ? AND status = "draft"',
       [req.params.id, req.user.id]
     );
 
-    if (result.affectedRows === 0) {
+    if (!reports[0]) {
       return res.status(404).json({ error: 'Report not found or cannot be deleted' });
+    }
+
+    const report = reports[0];
+
+    // Get all photos for this report
+    const [photos] = await db.execute(
+      'SELECT filepath FROM photos WHERE report_id = ?',
+      [req.params.id]
+    );
+
+    // Delete the report (photos will be deleted by CASCADE)
+    await db.execute(
+      'DELETE FROM reports WHERE id = ?',
+      [req.params.id]
+    );
+
+    // Delete physical files
+    for (const photo of photos) {
+      try {
+        await fs.unlink(photo.filepath);
+      } catch (err) {
+        console.error(`Failed to delete file ${photo.filepath}:`, err.message);
+      }
+    }
+
+    // Delete the report directory if it exists
+    const photoDir = path.join('uploads', report.case_number);
+    try {
+      await fs.rmdir(photoDir);
+    } catch (err) {
+      // Directory might not be empty or doesn't exist, ignore
+      console.log(`Could not remove directory ${photoDir}:`, err.message);
     }
 
     res.json({ success: true });
@@ -420,15 +453,21 @@ app.post('/api/photos', authMiddleware, upload.single('photo'), async (req, res)
 
     const report = reports[0];
 
-    // Extract EXIF
+    // Determine if it's a photo or video
+    const isVideo = file.mimetype.startsWith('video/');
+    const mediaType = isVideo ? 'video' : 'photo';
+
+    // Extract EXIF (only for photos)
     let lat = null, lng = null, takenAt = null;
-    try {
-      const exif = await exifr.parse(file.path, { gps: true });
-      lat = exif?.latitude || null;
-      lng = exif?.longitude || null;
-      takenAt = exif?.DateTimeOriginal || null;
-    } catch (exifError) {
-      console.log('EXIF extraction failed:', exifError.message);
+    if (!isVideo) {
+      try {
+        const exif = await exifr.parse(file.path, { gps: true });
+        lat = exif?.latitude || null;
+        lng = exif?.longitude || null;
+        takenAt = exif?.DateTimeOriginal || null;
+      } catch (exifError) {
+        console.log('EXIF extraction failed:', exifError.message);
+      }
     }
 
     // Move file to permanent location
@@ -439,8 +478,8 @@ app.post('/api/photos', authMiddleware, upload.single('photo'), async (req, res)
 
     // Save to DB
     await db.execute(
-      'INSERT INTO photos (report_id, filename, filepath, mime_type, file_size, lat, lng, taken_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [reportId, file.originalname, newPath, file.mimetype, file.size, lat, lng, takenAt]
+      'INSERT INTO photos (report_id, filename, filepath, mime_type, media_type, file_size, lat, lng, taken_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [reportId, file.originalname, newPath, file.mimetype, mediaType, file.size, lat, lng, takenAt]
     );
 
     // Update report location if this is first photo with GPS
@@ -619,12 +658,16 @@ Diese E-Mail wurde automatisch generiert von rechtundordnung.de
 app.get('/api/public/reports', async (req, res) => {
   try {
     const [reports] = await db.execute(
-      `SELECT case_number, violation_type, notes, location_address, location_zip,
-              location_lat, location_lng, status, submitted_at, created_at,
-              (SELECT COUNT(*) FROM photos WHERE report_id = reports.id) as photo_count
-       FROM reports
-       WHERE is_public = TRUE AND status != 'draft'
-       ORDER BY submitted_at DESC
+      `SELECT r.case_number, r.violation_type, r.notes, r.location_address, r.location_zip,
+              r.location_lat, r.location_lng, r.status, r.submitted_at, r.created_at,
+              r.hide_username,
+              CASE WHEN r.hide_username = TRUE THEN NULL ELSE u.name END as user_name,
+              CASE WHEN r.hide_username = TRUE THEN NULL ELSE u.email END as user_email,
+              (SELECT COUNT(*) FROM photos WHERE report_id = r.id) as photo_count
+       FROM reports r
+       LEFT JOIN users u ON r.user_id = u.id
+       WHERE r.is_public = TRUE AND r.status != 'draft'
+       ORDER BY r.submitted_at DESC
        LIMIT 100`
     );
 
@@ -638,7 +681,13 @@ app.get('/api/public/reports', async (req, res) => {
 app.get('/api/public/reports/:caseNumber', async (req, res) => {
   try {
     const [reports] = await db.execute(
-      'SELECT case_number, violation_type, notes, location_address, location_zip, status, submitted_at FROM reports WHERE case_number = ? AND is_public = TRUE',
+      `SELECT r.id, r.case_number, r.violation_type, r.notes, r.location_address,
+              r.location_zip, r.status, r.submitted_at, r.hide_username,
+              CASE WHEN r.hide_username = TRUE THEN NULL ELSE u.name END as user_name,
+              CASE WHEN r.hide_username = TRUE THEN NULL ELSE u.email END as user_email
+       FROM reports r
+       LEFT JOIN users u ON r.user_id = u.id
+       WHERE r.case_number = ? AND r.is_public = TRUE`,
       [req.params.caseNumber]
     );
 
@@ -647,7 +696,7 @@ app.get('/api/public/reports/:caseNumber', async (req, res) => {
     }
 
     const [photos] = await db.execute(
-      'SELECT id, filename, filepath FROM photos WHERE report_id = ?',
+      'SELECT id, filename, filepath, media_type, mime_type FROM photos WHERE report_id = ?',
       [reports[0].id]
     );
 

@@ -64,16 +64,20 @@
                             <p><strong>Standort:</strong> ${report.location_address || 'Nicht verfügbar'}</p>
                             ${report.notes ? `<p><strong>Hinweise:</strong> ${report.notes}</p>` : ''}
                             <p><strong>Öffentlich:</strong> ${report.is_public ? 'Ja' : 'Nein'}</p>
+                            ${report.is_public ? `<p><strong>Anonym:</strong> ${report.hide_username ? 'Ja (Name versteckt)' : 'Nein (Name sichtbar)'}</p>` : ''}
                             <p><strong>Erstellt:</strong> ${new Date(report.created_at).toLocaleString('de-DE')}</p>
                             ${report.submitted_at ? `<p><strong>Versendet:</strong> ${new Date(report.submitted_at).toLocaleString('de-DE')}</p>` : ''}
 
                             <hr>
 
-                            <h5>Fotos (${photos.length})</h5>
+                            <h5>Medien (${photos.length})</h5>
                             <div class="row">
                                 ${photos.map(photo => `
                                     <div class="col-md-3 mb-3">
-                                        <img src="/${photo.filepath}" class="img-fluid img-thumbnail" alt="${photo.filename}">
+                                        ${photo.media_type === 'video' ?
+                                            `<video src="/${photo.filepath}" class="img-fluid img-thumbnail" controls style="max-height:200px;width:100%;object-fit:cover;"></video>` :
+                                            `<img src="/${photo.filepath}" class="img-fluid img-thumbnail" alt="${photo.filename}">`
+                                        }
                                         <small class="text-muted d-block">${photo.filename}</small>
                                         ${photo.lat && photo.lng ? `<small>📍 ${parseFloat(photo.lat).toFixed(6)}, ${parseFloat(photo.lng).toFixed(6)}</small>` : ''}
                                     </div>
