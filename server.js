@@ -113,6 +113,73 @@ async function geocodeLocation(lat, lng) {
   }
 }
 
+async function getDistrictByZip(zip) {
+  if (!zip || !CONFIG.wegliApiKey) {
+    console.log('No ZIP or weg.li API key, skipping district lookup');
+    return null;
+  }
+
+  try {
+    // Check cache first
+    const [cached] = await db.execute(
+      'SELECT * FROM districts WHERE zip = ?',
+      [zip]
+    );
+
+    if (cached[0]) {
+      console.log(`Using cached district for ZIP ${zip}`);
+      return cached[0];
+    }
+
+    // Fetch from weg.li API
+    console.log(`Fetching district for ZIP ${zip} from weg.li API`);
+    const response = await axios.get(`https://www.weg.li/api/districts/${zip}`, {
+      headers: {
+        'X-API-KEY': CONFIG.wegliApiKey,
+        'Accept': 'application/json'
+      },
+      timeout: 5000
+    });
+
+    const district = response.data;
+
+    // Cache in database
+    await db.execute(
+      `INSERT INTO districts (name, zip, email, latitude, longitude, personal_email)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+       name = VALUES(name),
+       email = VALUES(email),
+       latitude = VALUES(latitude),
+       longitude = VALUES(longitude),
+       personal_email = VALUES(personal_email)`,
+      [
+        district.name,
+        district.zip,
+        district.email,
+        district.latitude || null,
+        district.longitude || null,
+        district.personal_email || false
+      ]
+    );
+
+    const [newDistrict] = await db.execute(
+      'SELECT * FROM districts WHERE zip = ?',
+      [zip]
+    );
+
+    console.log(`✅ District cached: ${district.name} (${district.email})`);
+    return newDistrict[0];
+  } catch (error) {
+    if (error.response && error.response.status === 404) {
+      console.log(`No district found for ZIP ${zip}`);
+      return null;
+    }
+    console.error('weg.li API error:', error.message);
+    return null;
+  }
+}
+
 // ============ API ENDPOINTS ============
 
 // Health Check
@@ -381,9 +448,19 @@ app.post('/api/photos', authMiddleware, upload.single('photo'), async (req, res)
       // Geocode
       const location = await geocodeLocation(lat, lng);
 
+      // Get district from weg.li
+      let districtId = null;
+      if (location?.zip) {
+        const district = await getDistrictByZip(location.zip);
+        if (district) {
+          districtId = district.id;
+          console.log(`✅ District assigned: ${district.name} → ${district.email}`);
+        }
+      }
+
       await db.execute(
-        'UPDATE reports SET location_lat = ?, location_lng = ?, location_address = ?, location_zip = ? WHERE id = ?',
-        [lat, lng, location?.address || null, location?.zip || null, reportId]
+        'UPDATE reports SET location_lat = ?, location_lng = ?, location_address = ?, location_zip = ?, district_id = ? WHERE id = ?',
+        [lat, lng, location?.address || null, location?.zip || null, districtId, reportId]
       );
 
       // 🚨 PROXIMITY CHECK (50m)
@@ -457,6 +534,28 @@ app.post('/api/reports/:id/submit', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Please upload at least one photo' });
     }
 
+    // Get district email
+    let districtEmail = null;
+    let districtName = null;
+    if (report.district_id) {
+      const [districts] = await db.execute(
+        'SELECT name, email FROM districts WHERE id = ?',
+        [report.district_id]
+      );
+      if (districts[0] && districts[0].email) {
+        districtEmail = districts[0].email;
+        districtName = districts[0].name;
+      }
+    }
+
+    // Fallback if no district found
+    if (!districtEmail) {
+      return res.status(400).json({
+        error: 'No district found',
+        message: 'Kein zuständiges Ordnungsamt gefunden. Bitte Standortinformationen überprüfen.'
+      });
+    }
+
     // Generate email address
     const emailAddress = getCaseEmailAddress(report.case_number);
 
@@ -471,7 +570,7 @@ app.post('/api/reports/:id/submit', authMiddleware, async (req, res) => {
 
       await transporter.sendMail({
         from: `"RechtUndOrdnung" <${emailAddress}>`,
-        to: 'ordnungsamt@example.com', // TODO: Get from weg.li
+        to: districtEmail,
         replyTo: emailAddress,
         subject: `DSGVO-Verstoß - Aktenzeichen ${report.case_number}`,
         text: `

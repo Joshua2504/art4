@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Öffentliche Anzeigen - RechtUndOrdnung</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        #map {
+            height: 500px;
+            width: 100%;
+            border-radius: 8px;
+        }
+        .report-marker {
+            cursor: pointer;
+        }
+        .stats-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-primary">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">RechtUndOrdnung - Öffentliche Anzeigen</span>
+            <a href="/" class="btn btn-outline-light btn-sm">Login</a>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- Statistics -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body text-center">
+                        <h2 id="totalCount">0</h2>
+                        <small>Gesamt Anzeigen</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-success text-white">
+                    <div class="card-body text-center">
+                        <h2 id="completedCount">0</h2>
+                        <small>Abgeschlossen</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-white">
+                    <div class="card-body text-center">
+                        <h2 id="inProgressCount">0</h2>
+                        <small>In Bearbeitung</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-danger text-white">
+                    <div class="card-body text-center">
+                        <h2 id="rejectedCount">0</h2>
+                        <small>Abgelehnt</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Map -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Karte</h5>
+            </div>
+            <div class="card-body p-0">
+                <div id="map"></div>
+            </div>
+        </div>
+
+        <!-- List View -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Alle öffentlichen Anzeigen</h5>
+                <div>
+                    <select id="filterStatus" class="form-select form-select-sm">
+                        <option value="">Alle Status</option>
+                        <option value="submitted">Versendet</option>
+                        <option value="in_progress">In Bearbeitung</option>
+                        <option value="completed">Abgeschlossen</option>
+                        <option value="rejected">Abgelehnt</option>
+                    </select>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="reportsList"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const API = 'http://localhost:3000/api';
+        let allReports = [];
+        let map = null;
+        let markers = [];
+
+        // Initialize map
+        function initMap() {
+            map = L.map('map').setView([51.1657, 10.4515], 6); // Germany center
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+        }
+
+        function getStatusBadge(status) {
+            const badges = {
+                'submitted': 'bg-primary',
+                'in_progress': 'bg-warning',
+                'completed': 'bg-success',
+                'rejected': 'bg-danger'
+            };
+            const texts = {
+                'submitted': 'Versendet',
+                'in_progress': 'In Bearbeitung',
+                'completed': 'Abgeschlossen',
+                'rejected': 'Abgelehnt'
+            };
+            return `<span class="badge ${badges[status]}">${texts[status]}</span>`;
+        }
+
+        function addMarker(report) {
+            if (!report.location_lat || !report.location_lng) return;
+
+            const marker = L.marker([report.location_lat, report.location_lng])
+                .addTo(map)
+                .bindPopup(`
+                    <strong>${report.case_number}</strong><br>
+                    ${getStatusBadge(report.status)}<br>
+                    <small>${report.violation_type || 'Nicht angegeben'}</small><br>
+                    <small>${report.location_address || 'Keine Adresse'}</small><br>
+                    <small>${new Date(report.created_at).toLocaleDateString('de-DE')}</small>
+                `);
+
+            markers.push(marker);
+        }
+
+        function updateStats(reports) {
+            document.getElementById('totalCount').textContent = reports.length;
+            document.getElementById('completedCount').textContent =
+                reports.filter(r => r.status === 'completed').length;
+            document.getElementById('inProgressCount').textContent =
+                reports.filter(r => r.status === 'in_progress').length;
+            document.getElementById('rejectedCount').textContent =
+                reports.filter(r => r.status === 'rejected').length;
+        }
+
+        function renderReports(reports) {
+            const list = document.getElementById('reportsList');
+
+            if (reports.length === 0) {
+                list.innerHTML = '<p class="text-muted text-center">Keine Anzeigen gefunden</p>';
+                return;
+            }
+
+            list.innerHTML = reports.map(report => `
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h5 class="card-title">${report.case_number}</h5>
+                                <p class="card-text mb-1">
+                                    <strong>Verstoß:</strong> ${report.violation_type || 'Nicht angegeben'}
+                                </p>
+                                <p class="card-text mb-1">
+                                    <strong>Standort:</strong> ${report.location_address || 'Nicht verfügbar'}
+                                </p>
+                                ${report.notes ? `<p class="card-text mb-1"><small>${report.notes}</small></p>` : ''}
+                                <small class="text-muted">
+                                    Erstellt: ${new Date(report.created_at).toLocaleDateString('de-DE')}
+                                    ${report.submitted_at ? ` • Versendet: ${new Date(report.submitted_at).toLocaleDateString('de-DE')}` : ''}
+                                </small>
+                            </div>
+                            <div class="text-end">
+                                ${getStatusBadge(report.status)}
+                                <br>
+                                <small class="text-muted">${report.photo_count || 0} Fotos</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function filterReports() {
+            const status = document.getElementById('filterStatus').value;
+            const filtered = status
+                ? allReports.filter(r => r.status === status)
+                : allReports;
+
+            renderReports(filtered);
+
+            // Update map
+            markers.forEach(m => map.removeLayer(m));
+            markers = [];
+            filtered.forEach(addMarker);
+        }
+
+        async function loadPublicReports() {
+            try {
+                const res = await fetch(`${API}/public/reports`);
+                const data = await res.json();
+
+                allReports = data.reports;
+                updateStats(allReports);
+                renderReports(allReports);
+
+                // Add markers
+                allReports.forEach(addMarker);
+
+                // Fit bounds if markers exist
+                if (markers.length > 0) {
+                    const group = L.featureGroup(markers);
+                    map.fitBounds(group.getBounds().pad(0.1));
+                }
+            } catch (error) {
+                console.error('Error loading reports:', error);
+                document.getElementById('reportsList').innerHTML =
+                    '<div class="alert alert-danger">Fehler beim Laden der Anzeigen</div>';
+            }
+        }
+
+        // Event listeners
+        document.getElementById('filterStatus').addEventListener('change', filterReports);
+
+        // Initialize
+        initMap();
+        loadPublicReports();
+    </script>
+</body>
+</html>
