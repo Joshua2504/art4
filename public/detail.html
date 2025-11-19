@@ -52,6 +52,23 @@
                 const data = await res.json();
                 const { report, photos, documents, history } = data;
 
+                // Generate email preview
+                const caseEmail = report.case_number.toLowerCase().replace(/\//g, '-') + '@rechtundordnung.treudler.net';
+                const emailBody = `Sehr geehrte Damen und Herren,
+
+hiermit melde ich einen DSGVO-Verstoß im Bereich Videoüberwachung.
+
+Aktenzeichen: ${report.case_number}
+Standort: ${report.location_address || 'Keine Adresse verfügbar'}
+Verstoß: ${report.violation_type || 'Nicht angegeben'}
+
+${report.notes || ''}
+
+Fotos im Anhang.
+
+Mit freundlichen Grüßen
+Diese E-Mail wurde automatisch generiert von rechtundordnung.de`;
+
                 document.getElementById('reportDetail').innerHTML = `
                     <div class="card">
                         <div class="card-header bg-primary text-white">
@@ -67,6 +84,39 @@
                             ${report.is_public ? `<p><strong>Anonym:</strong> ${report.hide_username ? 'Ja (Name versteckt)' : 'Nein (Name sichtbar)'}</p>` : ''}
                             <p><strong>Erstellt:</strong> ${new Date(report.created_at).toLocaleString('de-DE')}</p>
                             ${report.submitted_at ? `<p><strong>Versendet:</strong> ${new Date(report.submitted_at).toLocaleString('de-DE')}</p>` : ''}
+
+                            <hr>
+
+                            <h5>📧 Zuständiges Ordnungsamt</h5>
+                            ${report.district_email ? `
+                                <div class="alert alert-success">
+                                    <p class="mb-1"><strong>Name:</strong> ${report.district_name || 'Unbekannt'}</p>
+                                    <p class="mb-1"><strong>E-Mail:</strong> ${report.district_email}</p>
+                                    ${report.district_zip ? `<p class="mb-0"><strong>PLZ:</strong> ${report.district_zip}</p>` : ''}
+                                </div>
+                            ` : `
+                                <div class="alert alert-danger">
+                                    <strong>⚠️ Kein Ordnungsamt verfügbar!</strong><br>
+                                    Für diesen Standort konnte kein zuständiges Ordnungsamt gefunden werden.
+                                    ${report.status === 'draft' ? '<br>Die Anzeige kann nicht versendet werden.' : ''}
+                                </div>
+                            `}
+
+                            ${report.status === 'draft' && report.district_email ? `
+                                <hr>
+                                <h5>📧 E-Mail Vorschau</h5>
+                                <div class="card bg-light">
+                                    <div class="card-body">
+                                        <p class="mb-1"><strong>Von:</strong> RechtUndOrdnung &lt;${caseEmail}&gt;</p>
+                                        <p class="mb-1"><strong>An:</strong> ${report.district_email}</p>
+                                        <p class="mb-1"><strong>Antwort an:</strong> ${caseEmail}</p>
+                                        <p class="mb-3"><strong>Betreff:</strong> DSGVO-Verstoß - Aktenzeichen ${report.case_number}</p>
+                                        <p class="mb-1"><strong>Anhänge:</strong> ${photos.length} Datei(en)</p>
+                                        <hr>
+                                        <pre style="white-space: pre-wrap; font-family: monospace; font-size: 0.9rem;">${emailBody}</pre>
+                                    </div>
+                                </div>
+                            ` : ''}
 
                             <hr>
 

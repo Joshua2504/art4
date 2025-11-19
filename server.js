@@ -156,6 +156,34 @@ async function getDistrictByZip(zip) {
   }
 
   try {
+    // Hardcoded district for PLZ 85764
+    if (zip === '85764') {
+      // Check if already in cache
+      const [cached] = await db.execute(
+        'SELECT * FROM districts WHERE zip = ?',
+        [zip]
+      );
+
+      if (cached[0]) {
+        console.log(`✅ Hardcoded district found in cache: ${cached[0].name}`);
+        return cached[0];
+      }
+
+      // Insert hardcoded district
+      await db.execute(
+        'INSERT INTO districts (name, zip, email, latitude, longitude, personal_email) VALUES (?, ?, ?, ?, ?, ?)',
+        ['Oberschleißheim (Hardcoded)', '85764', 'joshua@treudler.net', null, null, false]
+      );
+
+      const [newDistrict] = await db.execute(
+        'SELECT * FROM districts WHERE zip = ?',
+        [zip]
+      );
+
+      console.log(`✅ Hardcoded district created: ${newDistrict[0].name} (${newDistrict[0].email})`);
+      return newDistrict[0];
+    }
+
     // Check cache first
     const [cached] = await db.execute(
       'SELECT * FROM districts WHERE zip = ?',
@@ -354,7 +382,7 @@ app.get('/api/reports', authMiddleware, async (req, res) => {
 app.get('/api/reports/:id', authMiddleware, async (req, res) => {
   try {
     const [reports] = await db.execute(
-      'SELECT * FROM reports WHERE id = ? AND user_id = ?',
+      'SELECT r.*, d.name as district_name, d.email as district_email, d.zip as district_zip FROM reports r LEFT JOIN districts d ON r.district_id = d.id WHERE r.id = ? AND r.user_id = ?',
       [req.params.id, req.user.id]
     );
 
@@ -363,7 +391,7 @@ app.get('/api/reports/:id', authMiddleware, async (req, res) => {
     }
 
     const [photos] = await db.execute(
-      'SELECT id, filename, filepath, lat, lng, taken_at, created_at FROM photos WHERE report_id = ?',
+      'SELECT id, filename, filepath, media_type, mime_type, lat, lng, taken_at, created_at FROM photos WHERE report_id = ?',
       [req.params.id]
     );
 
