@@ -9,7 +9,10 @@ Minimalistische API-First Platform zum Melden rechtswidriger Videoüberwachung.
 - ✅ **Photo Upload mit EXIF** - Automatische GPS-Extraktion
 - ✅ **50m Proximity Check** - MySQL Spatial Query warnt bei nahen Anzeigen
 - ✅ **Aktenzeichen-E-Mail-System** - Jede Anzeige bekommt eigene Adresse
-- ✅ **Minimalistisch** - Nur 8 Dateien!
+- ✅ **weg.li Integration** - Automatische Ordnungsamt-Zuordnung per PLZ
+- ✅ **Geocoding** - Nominatim API für Adressauflösung
+- ✅ **Public Reports Page** - Öffentliche Karte mit allen Anzeigen
+- ✅ **Minimalistisch** - Nur 9 Dateien!
 - ✅ **Bootstrap UI** - Mobile-First Responsive Design
 
 ## 📁 Dateistruktur
@@ -18,17 +21,19 @@ Minimalistische API-First Platform zum Melden rechtswidriger Videoüberwachung.
 ruo-platform/
 ├── docker-compose.yml      # MySQL + Node Container
 ├── schema.sql              # Datenbank-Schema
+├── migrate-add-districts.sql  # Migration für districts table
 ├── package.json            # Dependencies
 ├── server.js               # API Server (ALLES in einer Datei!)
 ├── .env.example            # Konfiguration
-└── public/                 # Frontend (4 HTML-Dateien)
+└── public/                 # Frontend (5 HTML-Dateien)
     ├── index.html          # Login/Register
     ├── dashboard.html      # Übersicht
     ├── create.html         # Anzeige erstellen
-    └── detail.html         # Anzeige Details
+    ├── detail.html         # Anzeige Details
+    └── public.html         # Öffentliche Anzeigen mit Karte
 ```
 
-**Nur 8 Dateien total!**
+**Nur 10 Dateien total!**
 
 ## 🚀 Installation
 
@@ -148,7 +153,8 @@ docker-compose up -d
 
 ### Tabellen
 - `users` - Benutzer
-- `reports` - Anzeigen
+- `districts` - Ordnungsämter (gecacht von weg.li API)
+- `reports` - Anzeigen (mit district_id foreign key)
 - `photos` - Fotos mit GPS
 - `documents` - Hochgeladene Dokumente
 - `email_logs` - E-Mail-Verlauf
@@ -196,12 +202,13 @@ Parser extrahiert Aktenzeichen aus "To"-Adresse und ordnet E-Mail automatisch zu
 ## 🚧 TODO
 
 - [ ] IMAP Polling für eingehende E-Mails
-- [ ] weg.li API Integration für automatische Ordnungsamt-Zuordnung
-- [ ] Geocoding (Nominatim) für Adressauflösung
 - [ ] PDF-Generierung für E-Mail-Anhang
 - [ ] Status-Management durch Benutzer
 - [ ] Dokumenten-Upload nach Versand
-- [ ] Public Reports Seite
+- [x] weg.li API Integration für automatische Ordnungsamt-Zuordnung ✅
+- [x] Geocoding (Nominatim) für Adressauflösung ✅
+- [x] Public Reports Seite mit interaktiver Karte ✅
+- [x] Districts table für Ordnungsamt-Caching ✅
 
 ## 🐛 Troubleshooting
 

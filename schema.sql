@@ -12,11 +12,26 @@ CREATE TABLE IF NOT EXISTS users (
   INDEX idx_email (email)
 ) ENGINE=InnoDB;
 
+-- Districts table (for caching weg.li district information)
+CREATE TABLE IF NOT EXISTS districts (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL,
+  zip VARCHAR(10) UNIQUE NOT NULL,
+  email VARCHAR(255),
+  latitude DECIMAL(10, 8),
+  longitude DECIMAL(11, 8),
+  personal_email BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_zip (zip)
+) ENGINE=InnoDB;
+
 -- Reports table
 CREATE TABLE IF NOT EXISTS reports (
   id INT PRIMARY KEY AUTO_INCREMENT,
   case_number VARCHAR(50) UNIQUE NOT NULL,
   user_id INT NOT NULL,
+  district_id INT,
   status ENUM('draft', 'submitted', 'in_progress', 'completed', 'rejected') DEFAULT 'draft',
   violation_type VARCHAR(255),
   notes TEXT,
@@ -29,9 +44,11 @@ CREATE TABLE IF NOT EXISTS reports (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (district_id) REFERENCES districts(id) ON DELETE SET NULL,
   INDEX idx_user_id (user_id),
   INDEX idx_case_number (case_number),
   INDEX idx_status (status),
+  INDEX idx_district_id (district_id),
   INDEX idx_location (location_lat, location_lng)
 ) ENGINE=InnoDB;
 

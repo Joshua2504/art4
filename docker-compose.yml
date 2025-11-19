@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   mysql:
-    image: mysql:8.0
+    image: mariadb:10.6
     container_name: ruo-mysql
     environment:
       MYSQL_ROOT_PASSWORD: root
@@ -24,7 +24,7 @@ services:
     working_dir: /app
     volumes:
       - .:/app
-      - ./uploads:/app/uploads
+      - ./data/uploads:/app/uploads
     ports:
       - "3000:3000"
     environment:

@@ -619,12 +619,13 @@ Diese E-Mail wurde automatisch generiert von rechtundordnung.de
 app.get('/api/public/reports', async (req, res) => {
   try {
     const [reports] = await db.execute(
-      `SELECT case_number, violation_type, location_address, location_zip, status, submitted_at,
+      `SELECT case_number, violation_type, notes, location_address, location_zip,
+              location_lat, location_lng, status, submitted_at, created_at,
               (SELECT COUNT(*) FROM photos WHERE report_id = reports.id) as photo_count
        FROM reports
        WHERE is_public = TRUE AND status != 'draft'
        ORDER BY submitted_at DESC
-       LIMIT 20`
+       LIMIT 100`
     );
 
     res.json({ reports });
