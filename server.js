@@ -725,6 +725,56 @@ app.post('/api/photos', authMiddleware, upload.single('photo'), async (req, res)
   }
 });
 
+// ---- DELETE PHOTO ----
+app.delete('/api/photos/:id', authMiddleware, async (req, res) => {
+  try {
+    const photoId = req.params.id;
+
+    // Get photo details and verify ownership through report
+    const [photos] = await db.execute(
+      `SELECT p.*, r.user_id, r.status, r.case_number
+       FROM photos p
+       JOIN reports r ON p.report_id = r.id
+       WHERE p.id = ?`,
+      [photoId]
+    );
+
+    if (!photos[0]) {
+      return res.status(404).json({ error: 'Photo not found' });
+    }
+
+    const photo = photos[0];
+
+    // Verify ownership
+    if (photo.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    // Only allow deletion for drafts
+    if (photo.status !== 'draft') {
+      return res.status(400).json({ error: 'Can only delete photos from draft reports' });
+    }
+
+    // Delete physical file
+    try {
+      await fs.unlink(photo.filepath);
+      console.log(`✅ Deleted file: ${photo.filepath}`);
+    } catch (fileError) {
+      console.error(`⚠️ Failed to delete file ${photo.filepath}:`, fileError.message);
+      // Continue anyway - DB record should be deleted even if file is missing
+    }
+
+    // Delete from database
+    await db.execute('DELETE FROM photos WHERE id = ?', [photoId]);
+
+    console.log(`✅ Photo ${photoId} deleted from report ${photo.case_number}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Photo deletion error:', error);
+    res.status(500).json({ error: 'Failed to delete photo' });
+  }
+});
+
 // ---- SUBMIT REPORT ----
 app.post('/api/reports/:id/submit', authMiddleware, async (req, res) => {
   try {
