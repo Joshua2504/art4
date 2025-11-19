@@ -451,6 +451,62 @@ app.put('/api/reports/:id/location', authMiddleware, async (req, res) => {
   }
 });
 
+app.get('/api/reports/:id/validate', authMiddleware, async (req, res) => {
+  try {
+    const [reports] = await db.execute(
+      'SELECT r.*, d.name as district_name, d.email as district_email FROM reports r LEFT JOIN districts d ON r.district_id = d.id WHERE r.id = ? AND r.user_id = ?',
+      [req.params.id, req.user.id]
+    );
+
+    if (!reports[0]) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = reports[0];
+    const validation = {
+      valid: true,
+      errors: []
+    };
+
+    // Check if district is available
+    if (!report.district_id || !report.district_email) {
+      validation.valid = false;
+      validation.errors.push({
+        field: 'district',
+        message: 'Kein zuständiges Ordnungsamt gefunden. Bitte Standortinformationen überprüfen.'
+      });
+    }
+
+    // Check if photos exist
+    const [photos] = await db.execute(
+      'SELECT COUNT(*) as count FROM photos WHERE report_id = ?',
+      [req.params.id]
+    );
+
+    if (photos[0].count === 0) {
+      validation.valid = false;
+      validation.errors.push({
+        field: 'photos',
+        message: 'Mindestens ein Foto oder Video erforderlich.'
+      });
+    }
+
+    // Check if violation type is set
+    if (!report.violation_type) {
+      validation.valid = false;
+      validation.errors.push({
+        field: 'violation_type',
+        message: 'Bitte wählen Sie eine Verstoßart aus.'
+      });
+    }
+
+    res.json(validation);
+  } catch (error) {
+    console.error('Validate report error:', error);
+    res.status(500).json({ error: 'Failed to validate report' });
+  }
+});
+
 app.delete('/api/reports/:id', authMiddleware, async (req, res) => {
   try {
     // Get report details

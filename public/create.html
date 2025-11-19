@@ -291,7 +291,7 @@
         const urlParams = new URLSearchParams(window.location.search);
         const draftId = urlParams.get('draft');
 
-        // Auto-create report or load existing draft
+        // Load existing draft if specified
         (async function() {
             try {
                 if (draftId) {
@@ -337,25 +337,8 @@
                         alert('Fehler beim Laden des Entwurfs: ' + data.error);
                         window.location.href = '/dashboard.html';
                     }
-                } else {
-                    // Create new report
-                    const res = await fetch(`${API}/reports`, {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
-                        }
-                    });
-                    const data = await res.json();
-                    if (res.ok) {
-                        reportId = data.id;
-                        document.getElementById('caseNumber').textContent = data.caseNumber;
-                        document.getElementById('caseNumberCard').classList.remove('d-none');
-                    } else {
-                        alert('Fehler beim Erstellen des Berichts: ' + data.error);
-                        window.location.href = '/dashboard.html';
-                    }
                 }
+                // If no draftId, don't create report yet - wait for first photo upload
             } catch (error) {
                 alert('Fehler: ' + error.message);
                 window.location.href = '/dashboard.html';
@@ -444,6 +427,31 @@
         async function uploadPhotosAutomatically(files) {
             const status = document.getElementById('photoStatus');
             status.innerHTML = '<div class="spinner-border spinner-border-sm me-2" role="status"></div>Lade Fotos hoch...';
+
+            // Create report if it doesn't exist yet
+            if (!reportId) {
+                try {
+                    const res = await fetch(`${API}/reports`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                        reportId = data.id;
+                        document.getElementById('caseNumber').textContent = data.caseNumber;
+                        document.getElementById('caseNumberCard').classList.remove('d-none');
+                    } else {
+                        status.innerHTML = `<p class="text-danger mb-0">❌ Fehler beim Erstellen des Berichts: ${data.error}</p>`;
+                        return;
+                    }
+                } catch (error) {
+                    status.innerHTML = `<p class="text-danger mb-0">❌ Fehler: ${error.message}</p>`;
+                    return;
+                }
+            }
 
             for (let file of files) {
                 const formData = new FormData();
@@ -606,6 +614,31 @@
         document.getElementById('violationType').addEventListener('change', updateProgress);
 
         async function saveDraft() {
+            // Create report if it doesn't exist yet
+            if (!reportId) {
+                try {
+                    const res = await fetch(`${API}/reports`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                        reportId = data.id;
+                        document.getElementById('caseNumber').textContent = data.caseNumber;
+                        document.getElementById('caseNumberCard').classList.remove('d-none');
+                    } else {
+                        alert('Fehler beim Erstellen des Berichts: ' + data.error);
+                        return;
+                    }
+                } catch (error) {
+                    alert('Fehler: ' + error.message);
+                    return;
+                }
+            }
+
             const violationType = document.getElementById('violationType').value;
             const notes = document.getElementById('notes').value;
             const isPublic = document.getElementById('isPublic').checked;
@@ -640,6 +673,11 @@
         }
 
         async function submitReport() {
+            if (!reportId) {
+                alert('Bitte laden Sie zuerst ein Foto oder Video hoch');
+                return;
+            }
+
             const violationType = document.getElementById('violationType').value;
             const notes = document.getElementById('notes').value;
             const isPublic = document.getElementById('isPublic').checked;
@@ -658,10 +696,27 @@
             const submitBtn = document.getElementById('submitBtn');
             const submitBtnText = document.getElementById('submitBtnText');
             submitBtn.disabled = true;
-            submitBtnText.textContent = 'Wird versendet...';
+            submitBtnText.textContent = 'Wird validiert...';
 
             try {
+                // First, validate the report
+                const validationRes = await fetch(`${API}/reports/${reportId}/validate`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                const validation = await validationRes.json();
+
+                if (!validation.valid) {
+                    // Show all validation errors
+                    const errorMessages = validation.errors.map(e => e.message).join('\n');
+                    alert('Validierungsfehler:\n\n' + errorMessages);
+                    submitBtn.disabled = false;
+                    submitBtnText.textContent = '📤 Anzeige absenden';
+                    return;
+                }
+
                 // Update report
+                submitBtnText.textContent = 'Wird gespeichert...';
                 await fetch(`${API}/reports/${reportId}`, {
                     method: 'PUT',
                     headers: {
@@ -672,6 +727,7 @@
                 });
 
                 // Submit report
+                submitBtnText.textContent = 'Wird versendet...';
                 const res = await fetch(`${API}/reports/${reportId}/submit`, {
                     method: 'POST',
                     headers: {
@@ -689,12 +745,12 @@
                     const data = await res.json();
                     alert('Fehler beim Versenden: ' + (data.message || data.error));
                     submitBtn.disabled = false;
-                    submitBtnText.textContent = 'Anzeige absenden';
+                    submitBtnText.textContent = '📤 Anzeige absenden';
                 }
             } catch (error) {
                 alert('Fehler: ' + error.message);
                 submitBtn.disabled = false;
-                submitBtnText.textContent = 'Anzeige absenden';
+                submitBtnText.textContent = '📤 Anzeige absenden';
             }
         }
     </script>
